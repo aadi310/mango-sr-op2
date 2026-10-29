@@ -10,22 +10,21 @@
  *    34 big numbers, name up to 38. Nothing else, so sizes never drift between sections.
  *  - Nothing repeats: invoice number and date appear once (closing block), the total appears once in the
  *    receipt (the floating dock shows it again only after the receipt has scrolled away).
- *  - Flow: short header, purchase summary so the bill is on the first screen, action pill, then an ink
+ *  - Flow: short header, purchase summary overlapping header, action pill, then an ink
  *    band with coupons and the compact gold Club card, then feedback, video, profile, etc.
  *
  * Sections
  *  1. Header: logo, tier chip, "Thank you" and the first name. Short on purpose.
- *  2. Purchase summary: round size tag per item, tap for SKU / HSN / UoM / discount, tax lines, black total band
- *     with the payment method, QR chip. The action pill (history, email, download) sits right under it.
+ *  2. Purchase summary (overlapping header edge).
  *  3. Ink band: coupons + the compact Club card. Coupons have FOUR looks to choose from (see `couponVariant`):
- *       "stack"   wallet stack, swipe or tap through (default)
+ *       "stack"   horizontal wallet stack, swipe or tap through (default)
  *       "tickets" swipeable tickets, the centred one turns white
  *       "list"    slim rows, the most space-saving
  *       "reveal"  tap-to-reveal tiles
  *     `couponVariantPicker` shows a small switcher above the coupons so the Mango team can try each one.
  *     It is on automatically when the component runs on its sample data.
  *  4. Feedback (brown card).
- *  5. Video, profile, exchange (sand), Reach us, store finder, store card with the map strip, closing block.
+ *  5. Video, profile, exchange (sand), Reach us, store finder, store card, closing block.
  *
  * Phone first: hover styles only on devices that can hover; on touch every button dips while pressed.
  * Fixed layout: designed at 400px wide. On phones (<= 520px) it is scaled with CSS `zoom` to fill the screen,
@@ -1076,71 +1075,109 @@ function TicketsView({ coupons, copied, onCopy }: CouponViewProps) {
   );
 }
 
-/* ---- 2. Stack: a wallet of cards, swipe or tap through ---- */
+/* ---- 2. Stack: horizontal wallet deck, swipe or tap through ---- */
 const STACK_FILLS = [
   { bg: "#FFFFFF", fg: "#1A1A1A", sub: "#6E5445", line: "rgba(26,26,26,0.2)", btnBg: "#1A1A1A", btnFg: "#FFFFFF" },
   { bg: "#D8C3B4", fg: "#1A1A1A", sub: "#4A382E", line: "rgba(26,26,26,0.2)", btnBg: "#1A1A1A", btnFg: "#FFFFFF" },
   { bg: "#8B6F5E", fg: "#FFFFFF", sub: "#EADFD5", line: "rgba(255,255,255,0.3)", btnBg: "#FFFFFF", btnFg: "#1A1A1A" },
 ];
-const STACK_H = 176;
-const STACK_STEP = 14;
 
 function StackView({ coupons, copied, onCopy }: CouponViewProps) {
-  const n = coupons.length;
-  const [top, setTop] = useState(0);
-  const start = useRef<number | null>(null);
-  const go = (d: number) => setTop((t) => (t + d + n) % n);
+  const [active, setActive] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const trackRef = useRef<HTMLUListElement>(null);
+  const activeRef = useRef(0);
+  const drag = useRef({ down: false, x: 0, left: 0, moved: false });
+  const count = coupons.length;
+
+  useEffect(() => {
+    const root = trackRef.current;
+    if (!root || typeof IntersectionObserver === "undefined") return;
+    const items = Array.from(root.children);
+    const io = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((e) => {
+          if (e.isIntersecting) {
+            const i = items.indexOf(e.target);
+            if (i >= 0) {
+              activeRef.current = i;
+              setActive(i);
+            }
+          }
+        });
+      },
+      { root, rootMargin: "0px -45% 0px -45%", threshold: 0 },
+    );
+    items.forEach((i) => io.observe(i));
+    return () => io.disconnect();
+  }, [count]);
+
+  const goTo = useCallback((i: number) => {
+    const el = trackRef.current;
+    const child = el?.children[i] as HTMLElement | undefined;
+    if (!el || !child) return;
+    el.scrollTo({ left: child.offsetLeft - (el.clientWidth - child.offsetWidth) / 2, behavior: "smooth" });
+  }, []);
+
+  const onPointerDown = (e: ReactPointerEvent<HTMLUListElement>) => {
+    if (e.pointerType !== "mouse") return;
+    const el = trackRef.current;
+    if (!el) return;
+    drag.current = { down: true, x: e.clientX, left: el.scrollLeft, moved: false };
+    setDragging(true);
+  };
+  const onPointerMove = (e: ReactPointerEvent<HTMLUListElement>) => {
+    const d = drag.current;
+    const el = trackRef.current;
+    if (!d.down || !el) return;
+    const dx = e.clientX - d.x;
+    if (Math.abs(dx) > 5) d.moved = true;
+    el.scrollLeft = d.left - dx;
+  };
+  const endDrag = () => {
+    if (!drag.current.down) return;
+    drag.current.down = false;
+    setDragging(false);
+    goTo(activeRef.current);
+  };
 
   return (
-    <div>
-      <div
-        className="relative touch-pan-y select-none"
-        style={{ height: STACK_H + STACK_STEP * Math.min(2, n - 1) }}
-        onPointerDown={(e) => {
-          start.current = e.clientX;
+    <>
+      <ul
+        ref={trackRef}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerLeave={endDrag}
+        onPointerCancel={endDrag}
+        onClickCapture={(e) => {
+          if (drag.current.moved) {
+            e.preventDefault();
+            e.stopPropagation();
+            drag.current.moved = false;
+          }
         }}
-        onPointerUp={(e) => {
-          if (start.current == null) return;
-          const dx = e.clientX - start.current;
-          start.current = null;
-          if (Math.abs(dx) > 40) go(dx < 0 ? 1 : -1);
-        }}
-        onPointerCancel={() => {
-          start.current = null;
-        }}
+        className={`relative -mx-4 flex select-none gap-3 overflow-x-auto overscroll-x-contain px-4 pb-4 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${
+          dragging ? "cursor-grabbing snap-none" : "cursor-grab snap-x snap-mandatory"
+        }`}
       >
         {coupons.map((c, i) => {
-          const rel = (i - top + n) % n;
-          const f = STACK_FILLS[Math.min(rel, 2)];
-          const visible = rel < 3;
+          const f = STACK_FILLS[i % STACK_FILLS.length];
           return (
-            <div
-              key={c.code}
-              aria-hidden={rel !== 0}
-              className="absolute inset-x-0 top-0 rounded-[24px] p-4 shadow-[0_14px_26px_-14px_rgba(0,0,0,0.8)] transition-all duration-500 ease-out motion-reduce:transition-none"
-              style={{
-                height: STACK_H,
-                background: f.bg,
-                color: f.fg,
-                zIndex: n - rel,
-                opacity: visible ? 1 : 0,
-                pointerEvents: rel === 0 ? "auto" : "none",
-                transformOrigin: "50% 100%",
-                transform: `translateY(${Math.min(rel, 2) * STACK_STEP}px) scale(${1 - Math.min(rel, 2) * 0.05})`,
-              }}
-            >
-              <div className="flex h-full flex-col justify-between">
-                <div>
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="mg-bold text-[26px] leading-none">{c.value}</p>
-                    <Icon name="ticket" className="h-5 w-5" />
-                  </div>
-                  <p className={`${T_LABEL} mt-2`}>{c.title}</p>
-                  <p className={`mt-0.5 ${T_SMALL}`} style={{ color: f.sub }}>
-                    {c.description}
-                  </p>
+            <li key={c.code} className={`shrink-0 snap-center ${count > 1 ? "w-[78%]" : "w-full"}`}>
+              <div
+                className="relative overflow-hidden rounded-[24px] p-4 shadow-[0_14px_26px_-14px_rgba(0,0,0,0.6)]"
+                style={{ background: f.bg, color: f.fg }}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <p className="mg-bold text-[26px] leading-none">{c.value}</p>
+                  <Icon name="ticket" className="h-5 w-5" />
                 </div>
-                <div className="flex items-center justify-between gap-3 border-t-2 border-dashed pt-3" style={{ borderColor: f.line }}>
+                <p className={`${T_LABEL} mt-2`}>{c.title}</p>
+                <p className={`mt-0.5 ${T_SMALL}`} style={{ color: f.sub }}>
+                  {c.description}
+                </p>
+                <div className="mt-4 flex items-center justify-between gap-3 border-t-2 border-dashed pt-3" style={{ borderColor: f.line }}>
                   <div className="min-w-0">
                     <p className="mg-bold truncate text-[16px] tracking-[0.08em]">{c.code}</p>
                     <p className={T_SMALL} style={{ color: f.sub }}>
@@ -1149,7 +1186,6 @@ function StackView({ coupons, copied, onCopy }: CouponViewProps) {
                   </div>
                   <button
                     type="button"
-                    tabIndex={rel === 0 ? 0 : -1}
                     onClick={() => onCopy(c.code)}
                     aria-live="polite"
                     className="mg-bold shrink-0 rounded-full px-4 py-2 text-[12px]"
@@ -1159,25 +1195,21 @@ function StackView({ coupons, copied, onCopy }: CouponViewProps) {
                   </button>
                 </div>
               </div>
-            </div>
+            </li>
           );
         })}
-      </div>
+      </ul>
 
-      {n > 1 && (
-        <div className="mt-4 flex items-center justify-center gap-4">
-          <button type="button" onClick={() => go(-1)} aria-label="Previous coupon" className="grid h-9 w-9 place-items-center rounded-full bg-white/10 text-white active:bg-white/25">
-            <Icon name="arrow" className="h-4 w-4 rotate-180" />
-          </button>
-          <span className={`${T_LABEL} min-w-[56px] text-center tabular-nums text-[var(--mg-sand)]`}>
-            {top + 1} of {n}
-          </span>
-          <button type="button" onClick={() => go(1)} aria-label="Next coupon" className="grid h-9 w-9 place-items-center rounded-full bg-white/10 text-white active:bg-white/25">
-            <Icon name="arrow" className="h-4 w-4" />
-          </button>
+      {count > 1 && (
+        <div className="-mt-1 flex justify-center gap-0.5">
+          {coupons.map((c, i) => (
+            <button key={c.code} type="button" aria-label={`Show coupon ${i + 1} of ${count}`} aria-current={i === active ? "true" : undefined} onClick={() => goTo(i)} className="grid h-6 w-7 place-items-center">
+              <span className={`block h-1.5 rounded-full transition-all duration-300 ${i === active ? "w-6 bg-white" : "w-1.5 bg-white/30"}`} />
+            </button>
+          ))}
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -1510,37 +1542,6 @@ function ProfileCard({ data, onSave }: { data: MangoReceiptData; onSave?: (v: Pr
   );
 }
 
-/* ------------------------- abstract street map for the store card ------------------- */
-function MiniMap({ seed }: { seed: string }) {
-  const lines = useMemo(() => {
-    const rnd = seeded(seed);
-    const out: { d: string; w: number }[] = [];
-    for (let i = 0; i < 7; i++) {
-      const y = 10 + i * 18 + rnd() * 8;
-      out.push({ d: `M-10 ${y.toFixed(1)} Q ${(120 + rnd() * 60).toFixed(1)} ${(y + rnd() * 30 - 15).toFixed(1)} 380 ${(y + rnd() * 24 - 12).toFixed(1)}`, w: i % 3 === 0 ? 5 : 2.5 });
-    }
-    for (let i = 0; i < 6; i++) {
-      const x = 25 + i * 62 + rnd() * 20;
-      out.push({ d: `M${x.toFixed(1)} -10 Q ${(x + rnd() * 40 - 20).toFixed(1)} 55 ${(x + rnd() * 50 - 25).toFixed(1)} 130`, w: i % 2 === 0 ? 4 : 2.5 });
-    }
-    return out;
-  }, [seed]);
-  return (
-    <div className="relative h-[116px] w-full overflow-hidden bg-[var(--mg-sand-soft)]" aria-hidden="true">
-      <svg viewBox="0 0 368 116" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 h-full w-full" fill="none" stroke="#fff" strokeLinecap="round">
-        {lines.map((l, i) => (
-          <path key={i} d={l.d} strokeWidth={l.w} />
-        ))}
-      </svg>
-      <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-[60%]">
-        <span className="grid h-11 w-11 place-items-center rounded-full bg-[var(--mg-ink)] text-[var(--mg-sand)] shadow-[0_10px_20px_-6px_rgba(26,26,26,0.6)] ring-4 ring-white">
-          <Icon name="pin" className="h-5 w-5" />
-        </span>
-      </span>
-    </div>
-  );
-}
-
 /* ------------------------------ receipt view ------------------------------------- */
 interface ReceiptViewProps extends Omit<MangoReceiptProps, "data" | "receipts" | "onSelectReceipt"> {
   data: MangoReceiptData;
@@ -1618,7 +1619,7 @@ function ReceiptView({
       >
         {/* ---------- 1. Header: short ---------- */}
         <header
-          className="mg-grain relative overflow-hidden rounded-b-[32px] px-5 pb-14 pt-5 text-white"
+          className="mg-grain relative overflow-hidden rounded-b-[32px] px-5 pb-16 pt-5 text-white"
           style={{ background: "radial-gradient(130% 150% at 100% 0%, #6A5043 0%, #33271F 46%, #1A1A1A 80%)" }}
         >
           <span aria-hidden="true" className="pointer-events-none absolute -right-14 -top-14 h-44 w-44 rounded-full border-[20px] border-white/[0.07]" />
@@ -1656,8 +1657,8 @@ function ReceiptView({
           </div>
         </header>
 
-        {/* ---------- 2. Purchase summary ---------- */}
-        <section aria-label="Purchase summary" className="mt-5 px-4">
+        {/* ---------- 2. Purchase summary (overlapping header edge) ---------- */}
+        <section aria-label="Purchase summary" className="relative z-10 -mt-8 px-4">
           <div className={`${card} p-5 text-[var(--mg-muted)]`}>
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -1728,7 +1729,7 @@ function ReceiptView({
           </div>
         )}
 
-        {/* ---------- 4. Feedback, placed below the coupon/tier section ---------- */}
+        {/* ---------- 4. Feedback card ---------- */}
         <div className="mt-5 px-4">
           <FeedbackCard data={data} onSubmit={onSubmitFeedback} />
         </div>
@@ -1814,93 +1815,90 @@ function ReceiptView({
             </a>
           </section>
 
-          {/* ---------- 7. Store card with the map strip ---------- */}
-          <section aria-label="Store" className={`${card} overflow-hidden`}>
-            <MiniMap seed={store.name} />
-            <div className="p-5 text-[var(--mg-ink)]">
-              <p className={`${T_BODY} text-[var(--mg-muted)]`}>You shopped at</p>
-              <h2 className={`${T_TITLE} mt-1`}>{store.name}</h2>
-              <p className={`mt-3 flex items-start gap-2.5 ${T_BODY} text-[var(--mg-muted)]`}>
-                <Icon name="pin" className="mt-0.5 h-4 w-4 shrink-0 text-[var(--mg-brown)]" />
-                {store.address}
-              </p>
+          {/* ---------- 7. Store card (map graphic removed) ---------- */}
+          <section aria-label="Store" className={`${card} p-5 text-[var(--mg-ink)]`}>
+            <p className={`${T_BODY} text-[var(--mg-muted)]`}>You shopped at</p>
+            <h2 className={`${T_TITLE} mt-1`}>{store.name}</h2>
+            <p className={`mt-3 flex items-start gap-2.5 ${T_BODY} text-[var(--mg-muted)]`}>
+              <Icon name="pin" className="mt-0.5 h-4 w-4 shrink-0 text-[var(--mg-brown)]" />
+              {store.address}
+            </p>
 
-              <div className="mt-4 grid grid-cols-2 gap-2.5">
-                <a
-                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${store.name}, ${store.address}`)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={`${T_LABEL} flex items-center justify-center gap-2 rounded-full bg-[var(--mg-ink)] py-3.5 text-white active:bg-[var(--mg-brown)]`}
-                >
-                  <Icon name="directions" className="h-4 w-4 text-[var(--mg-sand)]" />
-                  Directions
-                </a>
-                <a href={`tel:${store.phone}`} className={`${T_LABEL} flex items-center justify-center gap-2 rounded-full bg-[var(--mg-wash)] py-3.5 text-[var(--mg-ink)] active:bg-[var(--mg-sand-soft)]`}>
-                  <Icon name="call" className="h-4 w-4 text-[var(--mg-brown)]" />
-                  Call store
-                </a>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setContactOpen((o) => !o)}
-                aria-expanded={contactOpen}
-                aria-controls={contactId}
-                className={`mt-4 flex w-full items-center justify-between gap-2 border-t border-[var(--mg-line)] pt-4 ${focusRing}`}
+            <div className="mt-4 grid grid-cols-2 gap-2.5">
+              <a
+                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${store.name}, ${store.address}`)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`${T_LABEL} flex items-center justify-center gap-2 rounded-full bg-[var(--mg-ink)] py-3.5 text-white active:bg-[var(--mg-brown)]`}
               >
-                <span className={T_LABEL}>{contactOpen ? "Hide contact and tax info" : "View contact and tax info"}</span>
-                <span className="grid h-8 w-8 place-items-center rounded-full bg-[var(--mg-ink)] text-white">
-                  <Icon name="chevron" className={`h-4 w-4 transition-transform duration-300 ${contactOpen ? "rotate-180" : ""}`} />
-                </span>
-              </button>
+                <Icon name="directions" className="h-4 w-4 text-[var(--mg-sand)]" />
+                Directions
+              </a>
+              <a href={`tel:${store.phone}`} className={`${T_LABEL} flex items-center justify-center gap-2 rounded-full bg-[var(--mg-wash)] py-3.5 text-[var(--mg-ink)] active:bg-[var(--mg-sand-soft)]`}>
+                <Icon name="call" className="h-4 w-4 text-[var(--mg-brown)]" />
+                Call store
+              </a>
+            </div>
 
-              <Collapse open={contactOpen} id={contactId}>
-                <div className="mt-3 space-y-2.5">
-                  <a href={`mailto:${store.email}`} className="flex items-center justify-between gap-3 rounded-2xl bg-[var(--mg-wash)] p-3.5 active:bg-[var(--mg-sand-soft)]">
-                    <span className="flex min-w-0 items-center gap-3">
-                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white text-[var(--mg-brown)]">
-                        <Icon name="mail" className="h-4 w-4" />
-                      </span>
-                      <span className="min-w-0">
-                        <span className={`block ${T_SMALL} text-[var(--mg-muted)]`}>Email support</span>
-                        <span className={`${T_LABEL} block truncate`}>{store.email}</span>
-                      </span>
+            <button
+              type="button"
+              onClick={() => setContactOpen((o) => !o)}
+              aria-expanded={contactOpen}
+              aria-controls={contactId}
+              className={`mt-4 flex w-full items-center justify-between gap-2 border-t border-[var(--mg-line)] pt-4 ${focusRing}`}
+            >
+              <span className={T_LABEL}>{contactOpen ? "Hide contact and tax info" : "View contact and tax info"}</span>
+              <span className="grid h-8 w-8 place-items-center rounded-full bg-[var(--mg-ink)] text-white">
+                <Icon name="chevron" className={`h-4 w-4 transition-transform duration-300 ${contactOpen ? "rotate-180" : ""}`} />
+              </span>
+            </button>
+
+            <Collapse open={contactOpen} id={contactId}>
+              <div className="mt-3 space-y-2.5">
+                <a href={`mailto:${store.email}`} className="flex items-center justify-between gap-3 rounded-2xl bg-[var(--mg-wash)] p-3.5 active:bg-[var(--mg-sand-soft)]">
+                  <span className="flex min-w-0 items-center gap-3">
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white text-[var(--mg-brown)]">
+                      <Icon name="mail" className="h-4 w-4" />
                     </span>
-                    <Icon name="arrow" className="h-4 w-4 shrink-0 text-[var(--mg-brown)]" />
-                  </a>
-
-                  <a href={`tel:${store.phone}`} className="flex items-center justify-between gap-3 rounded-2xl bg-[var(--mg-wash)] p-3.5 active:bg-[var(--mg-sand-soft)]">
-                    <span className="flex min-w-0 items-center gap-3">
-                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white text-[var(--mg-brown)]">
-                        <Icon name="phone" className="h-4 w-4" />
-                      </span>
-                      <span className="min-w-0">
-                        <span className={`block ${T_SMALL} text-[var(--mg-muted)]`}>Store phone</span>
-                        <span className={`${T_LABEL} block truncate tabular-nums`}>{store.phone}</span>
-                      </span>
+                    <span className="min-w-0">
+                      <span className={`block ${T_SMALL} text-[var(--mg-muted)]`}>Email support</span>
+                      <span className={`${T_LABEL} block truncate`}>{store.email}</span>
                     </span>
-                    <Icon name="arrow" className="h-4 w-4 shrink-0 text-[var(--mg-brown)]" />
-                  </a>
+                  </span>
+                  <Icon name="arrow" className="h-4 w-4 shrink-0 text-[var(--mg-brown)]" />
+                </a>
 
-                  <div className="grid grid-cols-2 gap-2.5">
-                    <div className="rounded-2xl bg-[var(--mg-wash)] p-3.5">
-                      <p className={`flex items-center gap-1.5 ${T_SMALL} text-[var(--mg-muted)]`}>
-                        <Icon name="user" className="h-3.5 w-3.5" /> Associate
-                      </p>
-                      <p className={`${T_LABEL} mt-1`}>{store.associate}</p>
-                    </div>
-                    <div className="min-w-0 rounded-2xl bg-[var(--mg-wash)] p-3.5">
-                      <p className={`flex items-center gap-1.5 ${T_SMALL} text-[var(--mg-muted)]`}>
-                        <Icon name="tax" className="h-3.5 w-3.5" /> GSTIN
-                      </p>
-                      <p className={`${T_LABEL} mt-1 truncate tabular-nums`} title={store.gstin}>
-                        {store.gstin}
-                      </p>
-                    </div>
+                <a href={`tel:${store.phone}`} className="flex items-center justify-between gap-3 rounded-2xl bg-[var(--mg-wash)] p-3.5 active:bg-[var(--mg-sand-soft)]">
+                  <span className="flex min-w-0 items-center gap-3">
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white text-[var(--mg-brown)]">
+                      <Icon name="phone" className="h-4 w-4" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className={`block ${T_SMALL} text-[var(--mg-muted)]`}>Store phone</span>
+                      <span className={`${T_LABEL} block truncate tabular-nums`}>{store.phone}</span>
+                    </span>
+                  </span>
+                  <Icon name="arrow" className="h-4 w-4 shrink-0 text-[var(--mg-brown)]" />
+                </a>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="rounded-2xl bg-[var(--mg-wash)] p-3.5">
+                    <p className={`flex items-center gap-1.5 ${T_SMALL} text-[var(--mg-muted)]`}>
+                      <Icon name="user" className="h-3.5 w-3.5" /> Associate
+                    </p>
+                    <p className={`${T_LABEL} mt-1`}>{store.associate}</p>
+                  </div>
+                  <div className="min-w-0 rounded-2xl bg-[var(--mg-wash)] p-3.5">
+                    <p className={`flex items-center gap-1.5 ${T_SMALL} text-[var(--mg-muted)]`}>
+                      <Icon name="tax" className="h-3.5 w-3.5" /> GSTIN
+                    </p>
+                    <p className={`${T_LABEL} mt-1 truncate tabular-nums`} title={store.gstin}>
+                      {store.gstin}
+                    </p>
                   </div>
                 </div>
-              </Collapse>
-            </div>
+              </div>
+            </Collapse>
           </section>
         </div>
 
