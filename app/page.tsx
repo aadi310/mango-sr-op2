@@ -10,21 +10,21 @@
  *    34 big numbers, name up to 38. Nothing else, so sizes never drift between sections.
  *  - Nothing repeats: invoice number and date appear once (closing block), the total appears once in the
  *    receipt (the floating dock shows it again only after the receipt has scrolled away).
- *  - Flow: short header, feedback straight under it, then the purchase summary so the bill is on the first
- *    screen, action pill, then an ink band with coupons and the compact gold Club card, then the rest.
+ *  - Flow: short header, purchase summary so the bill is on the first screen, action pill, then an ink
+ *    band with coupons and the compact gold Club card, then feedback, video, profile, etc.
  *
  * Sections
  *  1. Header: logo, tier chip, "Thank you" and the first name. Short on purpose.
- *  2. Feedback (brown card) overlapping the header edge.
- *  3. Purchase summary: round size tag per item, tap for SKU / HSN / UoM / discount, tax lines, black total band
+ *  2. Purchase summary: round size tag per item, tap for SKU / HSN / UoM / discount, tax lines, black total band
  *     with the payment method, QR chip. The action pill (history, email, download) sits right under it.
- *  4. Ink band: coupons + the compact Club card. Coupons have FOUR looks to choose from (see `couponVariant`):
+ *  3. Ink band: coupons + the compact Club card. Coupons have FOUR looks to choose from (see `couponVariant`):
  *       "stack"   wallet stack, swipe or tap through (default)
  *       "tickets" swipeable tickets, the centred one turns white
  *       "list"    slim rows, the most space-saving
  *       "reveal"  tap-to-reveal tiles
  *     `couponVariantPicker` shows a small switcher above the coupons so the Mango team can try each one.
  *     It is on automatically when the component runs on its sample data.
+ *  4. Feedback (brown card).
  *  5. Video, profile, exchange (sand), Reach us, store finder, store card with the map strip, closing block.
  *
  * Phone first: hover styles only on devices that can hover; on touch every button dips while pressed.
@@ -1656,12 +1656,7 @@ function ReceiptView({
           </div>
         </header>
 
-        {/* ---------- 2. Feedback, straight under the header ---------- */}
-        <div className="relative z-10 -mt-8 px-4">
-          <FeedbackCard data={data} onSubmit={onSubmitFeedback} />
-        </div>
-
-        {/* ---------- 3. Purchase summary ---------- */}
+        {/* ---------- 2. Purchase summary ---------- */}
         <section aria-label="Purchase summary" className="mt-5 px-4">
           <div className={`${card} p-5 text-[var(--mg-muted)]`}>
             <div className="flex items-start justify-between gap-3">
@@ -1723,7 +1718,7 @@ function ReceiptView({
           </div>
         </div>
 
-        {/* ---------- 4. Ink band: coupons + Club card ---------- */}
+        {/* ---------- 3. Ink band: coupons + Club card ---------- */}
         {club && (
           <div className="mg-grain relative mt-8 overflow-hidden rounded-[32px] px-4 pb-6 pt-6" style={{ background: `radial-gradient(90% 30% at 0% 0%, rgba(139,111,94,0.28), rgba(26,26,26,0) 70%), ${BAND}` }}>
             <div className="relative space-y-6">
@@ -1732,6 +1727,11 @@ function ReceiptView({
             </div>
           </div>
         )}
+
+        {/* ---------- 4. Feedback, placed below the coupon/tier section ---------- */}
+        <div className="mt-5 px-4">
+          <FeedbackCard data={data} onSubmit={onSubmitFeedback} />
+        </div>
 
         <div className="space-y-6 px-4 pt-8">
           {/* ---------- 5. Video, profile, exchange ---------- */}
